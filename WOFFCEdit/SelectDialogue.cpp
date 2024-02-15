@@ -127,3 +127,7 @@ void SelectDialogue::OnBnClickedOk()
 	CDialogEx::OnOK();
 }
 
+/*void SelectDialogue::OnBnClckdOkNwBttn()
+{
+
+}*/

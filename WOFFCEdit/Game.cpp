@@ -74,9 +74,9 @@ void Game::Initialize(HWND window, int width, int height)
     m_keyboard = std::make_unique<Keyboard>();
 
     m_mouse = std::make_unique<Mouse>();
-    m_mouse->SetWindow(window);
+	m_mouse->SetWindow(window);
 
-    m_deviceResources->SetWindow(window, width, height);
+	m_deviceResources->SetWindow(window, width, height);
 
     m_deviceResources->CreateDeviceResources();
     CreateDeviceDependentResources();
@@ -144,6 +144,23 @@ void Game::Update(DX::StepTimer const& timer)
 	//camera motion is on a plane, so kill the 7 component of the look direction
 	Vector3 planarMotionVector = m_camLookDirection;
 	planarMotionVector.y = 0.0;
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	Relative mouse debugging work, here.
+
+	m_mouse->SetMode(m_InputCommands.RightMouseDown ? Mouse::MODE_RELATIVE : Mouse::MODE_ABSOLUTE);
+
+	Mouse::State mouse_state = m_mouse->GetState();
+
+	//debugvar = L"mouse_state: (" + std::to_wstring((float)mouse_state.x) + L", " + std::to_wstring((float)mouse_state.y) + L")";
+
+	/*if (mouse_state.positionMode == Mouse::MODE_RELATIVE)
+	{
+		debugvar = L"Mouse state: MODE_RELATIVE";
+	}
+	else
+	{
+		debugvar = L"Mouse state: MODE_ABSOLUTE";
+	}*/
 
 	if (m_InputCommands.rotRight)
 	{
@@ -245,8 +262,9 @@ void Game::Render()
 	//CAMERA POSITION ON HUD
 	m_sprites->Begin();
 	WCHAR   Buffer[256];
-	std::wstring var = L"Cam X: " + std::to_wstring(m_camPosition.x) + L"Cam Z: " + std::to_wstring(m_camPosition.z);
-	m_font->DrawString(m_sprites.get(), var.c_str() , XMFLOAT2(100, 10), Colors::Yellow);
+	//std::wstring var = L"Cam X: " + std::to_wstring(m_camPosition.x) + L"Cam Z: " + std::to_wstring(m_camPosition.z);
+
+	m_font->DrawString(m_sprites.get(), debugvar.c_str() , XMFLOAT2(100, 10), Colors::Yellow);
 	m_sprites->End();
 
 	//RENDER OBJECTS FROM SCENEGRAPH

@@ -2,6 +2,7 @@
 #include "resource.h"
 #include <vector>
 #include <sstream>
+#include "DeviceResources.h"
 
 //
 //ToolMain Class
@@ -306,12 +307,39 @@ void ToolMain::UpdateInput(MSG * msg)
 		break;
 
 	case WM_MOUSEMOVE:
+	{
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	Relative mouse debugging work, here.
+
+
+		int xPos = GET_X_LPARAM(msg->lParam);
+		int yPos = GET_Y_LPARAM(msg->lParam);
+
+		m_d3dRenderer.debugvar = L"WM_MOUSEMOVE: (" + std::to_wstring(xPos) + L", " + std::to_wstring(yPos) + L")";
+	}
 		break;
 
 	case WM_LBUTTONDOWN:	//mouse button down,  you will probably need to check when its up too
 		//set some flag for the mouse button in inputcommands
 		break;
+	case WM_SYSKEYDOWN:
+		DirectX::Keyboard::ProcessMessage(msg->message, msg->wParam, msg->lParam);
+		if (msg->wParam == VK_RETURN && (msg->lParam & 0x60000000) == 0x20000000)
+		{
+		}
+		break;
+	case WM_RBUTTONDOWN:
 
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	Relative mouse debugging work, here.
+
+		m_toolInputCommands.RightMouseDown = true;
+		break;
+
+	case WM_RBUTTONUP:
+
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	Relative mouse debugging work, here.
+
+		m_toolInputCommands.RightMouseDown = false;
+		break;
 	}
 	//here we update all the actual app functionality that we want.  This information will either be used int toolmain, or sent down to the renderer (Camera movement etc
 	//WASD movement

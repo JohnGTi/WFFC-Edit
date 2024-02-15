@@ -38,6 +38,7 @@ public:
 	virtual BOOL OnInitDialog() override;
 	virtual void PostNcDestroy();
 	afx_msg void OnBnClickedOk();
+	//afx_msg void OnBnClckdOkNwBttn();
 	afx_msg void OnLbnSelchangeList1();
 };
 

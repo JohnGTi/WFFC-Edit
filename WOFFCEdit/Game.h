@@ -54,9 +54,8 @@ public:
 #ifdef DXTK_AUDIO
 	void NewAudioDevice();
 #endif
-
+std::wstring debugvar;
 private:
-
 	void Update(DX::StepTimer const& timer);
 
 	void CreateDeviceDependentResources();

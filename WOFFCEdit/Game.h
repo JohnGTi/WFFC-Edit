@@ -1,99 +1,209 @@
-//
-// Game.h
-//
-
 #pragma once
 
 #include "DeviceResources.h"
 #include "StepTimer.h"
+
 #include "SceneObject.h"
 #include "DisplayObject.h"
 #include "DisplayChunk.h"
 #include "ChunkObject.h"
-#include "InputCommands.h"
+
 #include <vector>
+#include <map>
 
 
-// A basic game implementation that creates a D3D11 device and
-// provides a game loop.
+/** Forward declaration. */
+class ToolMain;
+class CameraController;
+
+
+/**
+	* "A basic game implementation that creates a Direct3D 11 device
+	* and provides a game loop."
+*/
 class Game : public DX::IDeviceNotify
 {
+	/** Constructor/Destructor. */
 public:
-
-	Game();
+	/** "Game" is to likely to be instantiated by the Tool framework-head. */
+	Game(ToolMain* ToolFrameworkHead);
 	~Game();
 
-	// Initialization and management
+	/**
+		* Where the terrain is composed of multiple chunks, this function
+		* may be adapted to return a chunk by index.
+	*/
+	DisplayChunk* GetDisplayChunk()
+	{
+		return &m_displayChunk;
+	}
+
+	/** @return	The minumum and maximum screen viewport depth, respectively. */
+	std::pair<float, float> GetViewportDepth();
+
+	/** "Initialize the Direct3D resources required to run." */
 	void Initialize(HWND window, int width, int height);
+
+	/**  */
 	void SetGridState(bool state);
 
-	// Basic game loop
-	void Tick(InputCommands * Input);
+	/** "Tick" executes the basic game loop.. */
+	void Tick();
+
+	/**
+		* At a scale some amount larger (e.g.) than the original object,
+		* render an outline of some colour.
+	*/
+	void RenderObjectHighlight(DisplayObject* Object
+		, DirectX::SimpleMath::Vector3 Scalar, DirectX::XMVECTORF32 Colour);
+
+	/** Draw the scene. */
 	void Render();
 
-	// Rendering helpers
+	/** "Clear the back buffers." */
 	void Clear();
 
-	// IDeviceNotify
+	/**
+		* "Game," which owns the Direct3D 11 device (resources), implements a messaging interface
+		* that responds to a lost/returned connection of the device.
+	*/
 	virtual void OnDeviceLost() override;
 	virtual void OnDeviceRestored() override;
 
-	// Messages
+	/**
+		* Messages.
+	*/
 	void OnActivated();
 	void OnDeactivated();
 	void OnSuspending();
 	void OnResuming();
 	void OnWindowSizeChanged(int width, int height);
 
-	//tool specific
+	/** (Tool-specific). */
 	void BuildDisplayList(std::vector<SceneObject> * SceneGraph); //note vector passed by reference 
 	void BuildDisplayChunk(ChunkObject *SceneChunk);
 	void SaveDisplayChunk(ChunkObject *SceneChunk);	//saves geometry et al
-	void ClearDisplayList();
+	void ClearDisplayList() {}
+
+	/**  */
+	ID3D11DeviceContext* GetDeviceContext();
+
+	/**
+		* "ToolMain" subscribes a camera class member to a delegate.
+	*/
+	std::shared_ptr<CameraController> GetCamera();
+
+	/** @return */
+	double GetDeltaTime();
+
+	/** @return */
+	double GetGameTime();
+
+	/**
+		* The "Pick" operation would be encapsulated, further,
+		* had object manipulation become the project focus.
+	*/
+	DisplayObject* Pick();
+
+
+	/**
+		* Getters for the world, view and projection matrices.
+	*/
+	DirectX::SimpleMath::Matrix GetWorld() const
+	{
+		return m_world;
+	}
+
+	DirectX::SimpleMath::Matrix GetView() const
+	{
+		return m_view;
+	}
+
+	DirectX::SimpleMath::Matrix GetProjection() const
+	{
+		return m_projection;
+	}
+
+	/**  */
+	void ToggleWireframe()
+	{
+		Wireframe = !Wireframe;
+	}
+
 
 #ifdef DXTK_AUDIO
 	void NewAudioDevice();
 #endif
+	std::wstring var;
+
 
 private:
-
+	/**  */
 	void Update(DX::StepTimer const& timer);
 
+	/**  */
 	void CreateDeviceDependentResources();
+
+	/**
+		* "Allocate all memory resources that change on a window SizeChanged event."
+	*/
 	void CreateWindowSizeDependentResources();
 
-	void XM_CALLCONV DrawGrid(DirectX::FXMVECTOR xAxis, DirectX::FXMVECTOR yAxis, DirectX::FXMVECTOR origin, size_t xdivs, size_t ydivs, DirectX::GXMVECTOR color);
+	/**  */
+	void XM_CALLCONV DrawGrid(DirectX::FXMVECTOR xAxis, DirectX::FXMVECTOR yAxis
+		, DirectX::FXMVECTOR origin
+		, size_t xdivs
+		, size_t ydivs
+		, DirectX::GXMVECTOR color);
 
-	//tool specific
-	std::vector<DisplayObject>			m_displayList;
-	DisplayChunk						m_displayChunk;
-	InputCommands						m_InputCommands;
 
-	//functionality
-	float								m_movespeed;
 
-	//camera
-	DirectX::SimpleMath::Vector3		m_camPosition;
-	DirectX::SimpleMath::Vector3		m_camOrientation;
-	DirectX::SimpleMath::Vector3		m_camLookAt;
-	DirectX::SimpleMath::Vector3		m_camLookDirection;
-	DirectX::SimpleMath::Vector3		m_camRight;
-	float m_camRotRate;
+	/** Attributes. */
 
-	//control variables
-	bool m_grid;							//grid rendering on / off
-	// Device resources.
-    std::shared_ptr<DX::DeviceResources>    m_deviceResources;
+	/** This class' - a component of the tool framework - owner. */
+	ToolMain* FrameworkHead = nullptr;
 
-    // Rendering loop timer.
+	/**
+		* Tool-specific display objects.
+	*/
+	std::vector<DisplayObject>				m_displayList;
+	DisplayChunk							m_displayChunk;
+
+	/** Toggle grid rendering. */
+	bool m_grid = false;
+
+	/** Toggle wireframe rendering. */
+	bool Wireframe = false;
+
+	/** Device resources. */
+	std::shared_ptr<DX::DeviceResources>    m_deviceResources;
+
+	/** Camera controller. */
+	std::shared_ptr<CameraController> Camera;
+
+	/** Handle to the game window. */
+	HWND WindowHandle = nullptr;
+
+    /** Rendering loop timer. */
     DX::StepTimer                           m_timer;
 
-    // Input devices.
+    /** Input peripherals. */
     std::unique_ptr<DirectX::GamePad>       m_gamePad;
     std::unique_ptr<DirectX::Keyboard>      m_keyboard;
     std::unique_ptr<DirectX::Mouse>         m_mouse;
 
-    // DirectXTK objects.
+	/**
+		* The colour and scale (Relative to the original object)
+		* of the outline of a selected object.
+	*/
+	DirectX::SimpleMath::Vector3 HighlightScalar;
+
+	DirectX::XMVECTORF32 HighlightColour = DirectX::Colors::White;
+
+
+    /**
+		* DirectX TK objects.
+	*/
     std::unique_ptr<DirectX::CommonStates>                                  m_states;
     std::unique_ptr<DirectX::BasicEffect>                                   m_batchEffect;
     std::unique_ptr<DirectX::EffectFactory>                                 m_fxFactory;
@@ -122,8 +232,8 @@ private:
     bool                                                                    m_retryDefault;
 #endif
 
-    DirectX::SimpleMath::Matrix                                             m_world;
-    DirectX::SimpleMath::Matrix                                             m_view;
+	DirectX::SimpleMath::Matrix                                             m_world;
+	DirectX::SimpleMath::Matrix                                             m_view;
     DirectX::SimpleMath::Matrix                                             m_projection;
 
 

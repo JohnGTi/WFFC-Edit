@@ -23,21 +23,21 @@
     <ProjectGuid>{DD0BCFE9-F760-43EB-9C31-BBFD23F397D9}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>Win32SimpleSample</RootNamespace>
-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>WoFEdit</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <UseOfMfc>Dynamic</UseOfMfc>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
     <UseOfMfc>Dynamic</UseOfMfc>
@@ -45,14 +45,14 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <UseOfMfc>Dynamic</UseOfMfc>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
     <UseOfMfc>Dynamic</UseOfMfc>
@@ -165,11 +165,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Brush.cpp" />
+    <ClCompile Include="CameraController.cpp" />
     <ClCompile Include="ChunkObject.cpp" />
+    <ClCompile Include="ConcurrencyHelper.cpp" />
+    <ClCompile Include="ContinuationBrush.cpp" />
     <ClCompile Include="DeviceResources.cpp" />
     <ClCompile Include="DisplayChunk.cpp" />
     <ClCompile Include="DisplayObject.cpp" />
+    <ClCompile Include="ExtrusionBrush.cpp" />
     <ClCompile Include="Game.cpp" />
+    <ClCompile Include="InputCommands.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="MFCFrame.cpp" />
     <ClCompile Include="MFCRenderFrame.cpp" />
@@ -179,14 +185,28 @@
     <ClCompile Include="SelectDialogue.cpp" />
     <ClCompile Include="sqlite3.c" />
     <ClCompile Include="ToolMain.cpp" />
+    <ClCompile Include="VoxelTraversal.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="allocator.hpp" />
+    <ClInclude Include="bindtmpl.hpp" />
+    <ClInclude Include="Brush.h" />
+    <ClInclude Include="CameraController.h" />
     <ClInclude Include="ChunkObject.h" />
+    <ClInclude Include="ConcurrencyHelper.h" />
+    <ClInclude Include="config.hpp" />
+    <ClInclude Include="ContinuationBrush.h" />
+    <ClInclude Include="delegate.h" />
+    <ClInclude Include="delegatetmpl.h" />
+    <ClInclude Include="delegatetmpl.hpp" />
     <ClInclude Include="DeviceResources.h" />
     <ClInclude Include="DisplayChunk.h" />
     <ClInclude Include="DisplayObject.h" />
+    <ClInclude Include="ExtrusionBrush.h" />
     <ClInclude Include="Game.h" />
+    <ClInclude Include="get_pointer.hpp" />
     <ClInclude Include="InputCommands.h" />
+    <ClInclude Include="make_delegatetmpl.hpp" />
     <ClInclude Include="MFCFrame.h" />
     <ClInclude Include="MFCRenderFrame.h" />
     <ClInclude Include="pch.h" />
@@ -198,6 +218,7 @@
     <ClInclude Include="StepTimer.h" />
     <ClInclude Include="MFCMain.h" />
     <ClInclude Include="ToolMain.h" />
+    <ClInclude Include="VoxelTraversal.h" />
   </ItemGroup>
   <ItemGroup>
     <Media Include="database\data\Scene1.fbx">

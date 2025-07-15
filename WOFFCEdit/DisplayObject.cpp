@@ -1,5 +1,10 @@
 #include "DisplayObject.h"
 
+#include "directxmath.h"
+
+using namespace DirectX;
+
+
 DisplayObject::DisplayObject()
 {
 	m_model = NULL;
@@ -25,8 +30,33 @@ DisplayObject::DisplayObject()
 	m_light_quadratic = 0.0f;
 }
 
-
 DisplayObject::~DisplayObject()
 {
 //	delete m_texture_diffuse;
+}
+
+
+SimpleMath::Matrix DisplayObject::GetGlobalTransformation(SimpleMath::Matrix World)
+{
+	// Calculate the local transformation matrix of the object.
+	
+	// Begin with the scale factor and object translation.
+
+	const XMVECTORF32 Scale = { m_scale.x, m_scale.y, m_scale.z };
+
+	const XMVECTORF32 Translate = { m_position.x, m_position.y, m_position.z };
+
+	// Retrieve a quaternion from the yaw/pitch/roll, eular angles.
+
+	const XMVECTOR Rotation = SimpleMath::Quaternion::CreateFromYawPitchRoll(XMConvertToRadians(m_orientation.y)
+		, XMConvertToRadians(m_orientation.x)
+		, XMConvertToRadians(m_orientation.z));
+
+	// Compose the matrix transformatin in local-space.
+
+	XMMATRIX LocalTransform = XMMatrixTransformation(g_XMZero, SimpleMath::Quaternion::Identity, Scale, g_XMZero, Rotation, Translate);
+
+	// Return the world-space transformation.
+
+	return World * LocalTransform;
 }

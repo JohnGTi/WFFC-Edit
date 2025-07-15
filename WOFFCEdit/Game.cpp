@@ -1,10 +1,11 @@
-//
-// Game.cpp
-//
+#include "ToolMain.h"
+#include "CameraController.h"
+#include "Brush.h"
 
 #include "pch.h"
 #include "Game.h"
 #include "DisplayObject.h"
+
 #include <string>
 
 
@@ -13,46 +14,25 @@ using namespace DirectX::SimpleMath;
 
 using Microsoft::WRL::ComPtr;
 
-Game::Game()
 
+Game::Game(ToolMain* ToolFrameworkHead)
+    :
+    FrameworkHead(ToolFrameworkHead)
+    , Camera(std::make_shared<CameraController>(FrameworkHead, SimpleMath::Vector3(0.f, 2.f, -10.f)))
+    , HighlightScalar(1.05f, 1.01f, 1.05f)
 {
+    // Instantiate and register the owner of "DeviceResources."
+
     m_deviceResources = std::make_unique<DX::DeviceResources>();
     m_deviceResources->RegisterDeviceNotify(this);
+
+    // Clear the container of scene objects to render.
+
 	m_displayList.clear();
-	
-	//initial Settings
-	//modes
-	m_grid = false;
 
-	//functional
-	m_movespeed = 0.30;
-	m_camRotRate = 3.0;
+    // 
 
-	//camera
-	m_camPosition.x = 0.0f;
-	m_camPosition.y = 3.7f;
-	m_camPosition.z = -3.5f;
-
-	m_camOrientation.x = 0;
-	m_camOrientation.y = 0;
-	m_camOrientation.z = 0;
-
-	m_camLookAt.x = 0.0f;
-	m_camLookAt.y = 0.0f;
-	m_camLookAt.z = 0.0f;
-
-	m_camLookDirection.x = 0.0f;
-	m_camLookDirection.y = 0.0f;
-	m_camLookDirection.z = 0.0f;
-
-	m_camRight.x = 0.0f;
-	m_camRight.y = 0.0f;
-	m_camRight.z = 0.0f;
-
-	m_camOrientation.x = 0.0f;
-	m_camOrientation.y = 0.0f;
-	m_camOrientation.z = 0.0f;
-
+    //m_world = SimpleMath::Matrix::Identity;
 }
 
 Game::~Game()
@@ -66,23 +46,163 @@ Game::~Game()
 #endif
 }
 
-// Initialize the Direct3D resources required to run.
+std::pair<float, float> Game::GetViewportDepth()
+{
+    std::pair<float, float> ViewportDepth(0.f, 0.f);
+
+    if (m_deviceResources)
+    {
+        ViewportDepth.first = m_deviceResources->GetScreenViewport().MinDepth;
+        ViewportDepth.second = m_deviceResources->GetScreenViewport().MaxDepth;
+    }
+    return ViewportDepth;
+}
+
+ID3D11DeviceContext* Game::GetDeviceContext()
+{
+    if (m_deviceResources)
+    {
+        return m_deviceResources->GetD3DDeviceContext();
+    }
+    return nullptr;
+}
+
+
+std::shared_ptr<CameraController> Game::GetCamera()
+{
+    return Camera;
+}
+
+
+double Game::GetDeltaTime()
+{
+    return m_timer.GetElapsedSeconds();
+}
+
+double Game::GetGameTime()
+{
+    return m_timer.GetTotalSeconds();
+}
+
+
+DisplayObject* Game::Pick()
+{
+    if (FrameworkHead && m_deviceResources)
+    {
+        if (InputCommands* InputState = FrameworkHead->GetInputCommands())
+        {
+            // Project the screen-space cursor coordinates to the near
+            // and far planes of the viewing frustrum.
+
+            XMFLOAT2 CursorPosition = InputState->GetCursorPosition();
+
+            const XMVECTOR NearSource = XMVectorSet(CursorPosition.x, CursorPosition.y, 0.0f, 1.0f);
+            const XMVECTOR FarSource = XMVectorSet(CursorPosition.x, CursorPosition.y, 1.0f, 1.0f);
+
+            // Retrieve the dimensions of the client window.
+
+            RECT Window;
+
+            GetClientRect(WindowHandle, &Window);
+
+
+            // The following object is finally returned where the section of the "PickingVector,"
+            // from "NearPoint" to the intersection with the object, is the shortest of any test.
+
+            DisplayObject* PickedObject = nullptr;
+
+            // (The below magic number should be extrapolated from scene information/
+            // The initial "ShortestPickedDistance" is to be the maximum length of the cast).
+
+            float ShortestPickedDistance = 1000.f;
+
+
+            for (auto& Object : m_displayList)
+            {
+                // Retrieve the global-space transform of the object.
+
+                XMMATRIX GlobalTransform = Object.GetGlobalTransformation(m_world);
+
+                // Unproject the cursor coordinates from the viewing frustrum,
+                // to the local space of this object.
+
+                XMVECTOR NearPoint = XMVector3Unproject(NearSource, 0.0f, 0.0f, Window.right, Window.bottom
+                    , m_deviceResources->GetScreenViewport().MinDepth
+                    , m_deviceResources->GetScreenViewport().MaxDepth
+                    , m_projection
+                    , m_view
+                    , GlobalTransform);
+
+                XMVECTOR FarPoint = XMVector3Unproject(FarSource, 0.0f, 0.0f, Window.right, Window.bottom
+                    , m_deviceResources->GetScreenViewport().MinDepth
+                    , m_deviceResources->GetScreenViewport().MaxDepth
+                    , m_projection
+                    , m_view
+                    , GlobalTransform);
+
+                // Compose a vector from the near and far sources, in object-space.
+
+                XMVECTOR PickingVector = XMVector3Normalize(FarPoint - NearPoint);
+
+                if (Model* Model = Object.m_model.get())
+                {
+                    for (int i = 0; i < Model->meshes.size(); ++i)
+                    {
+                        if (ModelMesh* Mesh = Model->meshes[i].get())
+                        {
+                            // 
+
+                            float PickedDistance = 0.f;
+
+                            if (Mesh->boundingBox.Intersects(NearPoint, PickingVector, PickedDistance))
+                            {
+                                // "PickingVector" intersects with the collision boundaries of "Object."
+
+                                if (PickedDistance < ShortestPickedDistance)
+                                {
+                                    // This object is the closest to the near plane;
+                                    // it is the working "PickedObject."
+
+                                    PickedObject = &Object;
+
+                                    ShortestPickedDistance = PickedDistance;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return PickedObject;
+        }
+    }
+    
+    return nullptr;
+}
+
+
 void Game::Initialize(HWND window, int width, int height)
 {
+    // Store a class reference to the window handle.
+
+    WindowHandle = window;
+
+
     m_gamePad = std::make_unique<GamePad>();
 
     m_keyboard = std::make_unique<Keyboard>();
 
     m_mouse = std::make_unique<Mouse>();
-    m_mouse->SetWindow(window);
+    m_mouse->SetWindow(WindowHandle);
 
-    m_deviceResources->SetWindow(window, width, height);
+    m_deviceResources->SetWindow(WindowHandle, width, height);
 
     m_deviceResources->CreateDeviceResources();
     CreateDeviceDependentResources();
 
     m_deviceResources->CreateWindowSizeDependentResources();
     CreateWindowSizeDependentResources();
+
 
 #ifdef DXTK_AUDIO
     // Create DirectXTK for Audio objects
@@ -108,17 +228,17 @@ void Game::Initialize(HWND window, int width, int height)
 #endif
 }
 
+
 void Game::SetGridState(bool state)
 {
 	m_grid = state;
 }
 
+
 #pragma region Frame Update
-// Executes the basic game loop.
-void Game::Tick(InputCommands *Input)
+
+void Game::Tick()
 {
-	//copy over the input commands so we have a local version to use elsewhere.
-	m_InputCommands = *Input;
     m_timer.Tick([&]()
     {
         Update(m_timer);
@@ -137,59 +257,51 @@ void Game::Tick(InputCommands *Input)
     Render();
 }
 
-// Updates the world.
+
 void Game::Update(DX::StepTimer const& timer)
 {
-	//TODO  any more complex than this, and the camera should be abstracted out to somewhere else
-	//camera motion is on a plane, so kill the 7 component of the look direction
-	Vector3 planarMotionVector = m_camLookDirection;
-	planarMotionVector.y = 0.0;
+	// Update the view matrix by way of the camera controller
+    // (The camera controller responds to user input).
 
-	if (m_InputCommands.rotRight)
-	{
-		m_camOrientation.y -= m_camRotRate;
-	}
-	if (m_InputCommands.rotLeft)
-	{
-		m_camOrientation.y += m_camRotRate;
-	}
+    if (FrameworkHead && Camera)
+    {
+        if (InputCommands* InputState = FrameworkHead->GetInputCommands())
+        {
+            // Camera calculations require frame-independency.
 
-	//create look direction from Euler angles in m_camOrientation
-	m_camLookDirection.x = sin((m_camOrientation.y)*3.1415 / 180);
-	m_camLookDirection.z = cos((m_camOrientation.y)*3.1415 / 180);
-	m_camLookDirection.Normalize();
+            float DeltaTime = static_cast<float>(timer.GetElapsedSeconds());
 
-	//create right vector from look Direction
-	m_camLookDirection.Cross(Vector3::UnitY, m_camRight);
-
-	//process input and update stuff
-	if (m_InputCommands.forward)
-	{	
-		m_camPosition += m_camLookDirection*m_movespeed;
-	}
-	if (m_InputCommands.back)
-	{
-		m_camPosition -= m_camLookDirection*m_movespeed;
-	}
-	if (m_InputCommands.right)
-	{
-		m_camPosition += m_camRight*m_movespeed;
-	}
-	if (m_InputCommands.left)
-	{
-		m_camPosition -= m_camRight*m_movespeed;
-	}
-
-	//update lookat point
-	m_camLookAt = m_camPosition + m_camLookDirection;
-
-	//apply camera vectors
-    m_view = Matrix::CreateLookAt(m_camPosition, m_camLookAt, Vector3::UnitY);
+            m_view = Camera->UpdateViewByInput(WindowHandle
+                , DeltaTime, InputState);
+        }
+    }
+    
 
     m_batchEffect->SetView(m_view);
     m_batchEffect->SetWorld(Matrix::Identity);
+
 	m_displayChunk.m_terrainEffect->SetView(m_view);
 	m_displayChunk.m_terrainEffect->SetWorld(Matrix::Identity);
+
+    if (FrameworkHead)
+    {
+        if (FrameworkHead)
+        {
+            std::vector<Brush*> Brushes = FrameworkHead->GetBrushes();
+
+            for (auto Tool : Brushes)
+            {
+                if (auto Effect = Tool->GetIndicatorEffect())
+                {
+                    // Accordingly, update the view and projection matrices
+                    // for the active Brush indicator's rendering settings.
+
+                    Effect->SetView(m_view);
+                    Effect->SetProjection(m_projection);
+                }
+            }
+        }
+    }
 
 #ifdef DXTK_AUDIO
     m_audioTimerAcc -= (float)timer.GetElapsedSeconds();
@@ -215,16 +327,85 @@ void Game::Update(DX::StepTimer const& timer)
         }
     }
 #endif
-
-   
 }
 #pragma endregion
 
+
 #pragma region Frame Render
-// Draws the scene.
+
+void Game::RenderObjectHighlight(DisplayObject* Object, Vector3 Scalar, XMVECTORF32 Colour)
+{
+    // To validate: a local reference to the renderer (Device) context.
+
+    ID3D11DeviceContext* DeviceContext = m_deviceResources->GetD3DDeviceContext();
+
+    if (Object && DeviceContext)
+    {
+        // Retrieve the global-space transform of the object.
+
+        XMMATRIX GlobalTransform = Object->GetGlobalTransformation(m_world);
+
+        // Post-transform the global matrix so as to correctly scale it.
+
+        const XMVECTORF32 Translate = { Object->m_position.x, Object->m_position.y
+            , Object->m_position.z };
+
+        XMMATRIX AtOrigin = GlobalTransform * XMMatrixTranslationFromVector(-Translate);
+
+        XMMATRIX ScaleAtOrigin = AtOrigin * XMMatrixScalingFromVector(Scalar);
+
+        XMMATRIX Transform = ScaleAtOrigin * XMMatrixTranslationFromVector(Translate);
+
+
+        // Relevant effect interfaces are collected for ease-of-access.
+
+        std::vector<IEffectFog*> FogMesh;
+
+        Object->m_model->UpdateEffects([&](IEffect* effect)
+            {
+                // Cast and validate an "IEffectFog" interface.
+
+                FogMesh.push_back(dynamic_cast<IEffectFog*>(effect));
+
+                if (auto Fog = FogMesh.back())
+                {
+                    // Enable and assign the colour argument to the fog effect,
+                    // which totally colours the object drawing.
+
+                    Fog->SetFogEnabled(true);
+                    Fog->SetFogColor(Colour);
+                }
+                else
+                {
+                    // Remove the null content from the container.
+
+                    FogMesh.pop_back();
+                }
+            });
+
+        // Draw the scaled model wireframe, which has been brightly - for example -
+        // coloured by the fog effect.
+
+        Object->m_model->Draw(DeviceContext, *m_states, Transform, m_view
+            , m_projection, true);
+
+
+        // Iterate through the container of "IEffectFog" interfaces,
+        // and disable any valid fog effects.
+
+        for (auto Fog : FogMesh)
+        {
+            if (Fog)
+            {
+                Fog->SetFogEnabled(false);
+            }
+        }
+    }
+}
+
 void Game::Render()
 {
-    // Don't try to render anything before the first Update.
+    // Don't try to render anything before the first "Update."
     if (m_timer.GetFrameCount() == 0)
     {
         return;
@@ -232,8 +413,15 @@ void Game::Render()
 
     Clear();
 
+    // A labelled hierarchy of timing capture instruments the rendering sequence
+    // for the benefit of the profiling task.
+
     m_deviceResources->PIXBeginEvent(L"Render");
-    auto context = m_deviceResources->GetD3DDeviceContext();
+
+    // Provide the renderer (Device) context for the issuing of rendering commands.
+
+    ID3D11DeviceContext* DeviceContext = m_deviceResources->GetD3DDeviceContext();
+
 
 	if (m_grid)
 	{
@@ -242,47 +430,101 @@ void Game::Render()
 		const XMVECTORF32 yaxis = { 0.f, 0.f, 512.f };
 		DrawGrid(xaxis, yaxis, g_XMZero, 512, 512, Colors::Gray);
 	}
-	//CAMERA POSITION ON HUD
-	m_sprites->Begin();
+
+    m_sprites->Begin();
 	WCHAR   Buffer[256];
-	std::wstring var = L"Cam X: " + std::to_wstring(m_camPosition.x) + L"Cam Z: " + std::to_wstring(m_camPosition.z);
+
 	m_font->DrawString(m_sprites.get(), var.c_str() , XMFLOAT2(100, 10), Colors::Yellow);
 	m_sprites->End();
 
-	//RENDER OBJECTS FROM SCENEGRAPH
-	int numRenderObjects = m_displayList.size();
-	for (int i = 0; i < numRenderObjects; i++)
+
+	/** Render objects contained in the display list, "m_displayList". */
+
+    for (auto& Object : m_displayList)
 	{
-		m_deviceResources->PIXBeginEvent(L"Draw model");
-		const XMVECTORF32 scale = { m_displayList[i].m_scale.x, m_displayList[i].m_scale.y, m_displayList[i].m_scale.z };
-		const XMVECTORF32 translate = { m_displayList[i].m_position.x, m_displayList[i].m_position.y, m_displayList[i].m_position.z };
+		m_deviceResources->PIXBeginEvent(L"Draw model.");
 
-		//convert degrees into radians for rotation matrix
-		XMVECTOR rotate = Quaternion::CreateFromYawPitchRoll(m_displayList[i].m_orientation.y *3.1415 / 180,
-															m_displayList[i].m_orientation.x *3.1415 / 180,
-															m_displayList[i].m_orientation.z *3.1415 / 180);
+        // "Draw" requires the transformation of the object (In global-space).
 
-		XMMATRIX local = m_world * XMMatrixTransformation(g_XMZero, Quaternion::Identity, scale, g_XMZero, rotate, translate);
+        XMMATRIX GlobalTransform = Object.GetGlobalTransformation(m_world);
 
-		m_displayList[i].m_model->Draw(context, *m_states, local, m_view, m_projection, false);	//last variable in draw,  make TRUE for wireframe
+        // The global wireframe flag (A "Game" class member) trumps the local flag
+        // (The "DisplayObject" class member).
 
+        bool DrawWireframe = (Wireframe) ? true : Object.m_wireframe;
+
+        Object.m_model->Draw(DeviceContext, *m_states, GlobalTransform, m_view, m_projection
+            , DrawWireframe);
+        
 		m_deviceResources->PIXEndEvent();
 	}
+
+    if (FrameworkHead)
+    {
+        m_deviceResources->PIXBeginEvent(L"Draw model outline.");
+
+        // Of the objects that are currently "Selected,"
+        // render a visual indicator (An outline).
+
+        for (auto SelectedObject : FrameworkHead->SelectedObjects)
+        {
+            RenderObjectHighlight(SelectedObject, HighlightScalar, HighlightColour);
+        }
+
+        m_deviceResources->PIXEndEvent();
+    }
+
     m_deviceResources->PIXEndEvent();
 
-	//RENDER TERRAIN
-	context->OMSetBlendState(m_states->Opaque(), nullptr, 0xFFFFFFFF);
-	context->OMSetDepthStencilState(m_states->DepthDefault(),0);
-	context->RSSetState(m_states->CullNone());
-//	context->RSSetState(m_states->Wireframe());		//uncomment for wireframe
+    
+    /** Render the "Brush" tool pointer/indicator. */
 
-	//Render the batch,  This is handled in the Display chunk becuase it has the potential to get complex
+    if (FrameworkHead)
+    {
+        // Request access to the Brush tool, on the condition that
+        // the tool is in use.
+
+        if (Brush* Brush = FrameworkHead->GetBrushIfActive())
+        {
+            // An invalid Brush indicator is not to be drawn.
+
+            if (Brush->GetIsAwake())
+            {
+                m_deviceResources->PIXBeginEvent(L"Draw Brush indicator.");
+
+                // Call upon the Brush tool to draw the indicator geometries.
+
+                Brush->DrawIndicatorGeometry(m_world);
+
+                m_deviceResources->PIXEndEvent();
+            }
+        }
+    }
+
+
+	/** Render the terrain. */
+
+    DeviceContext->OMSetBlendState(m_states->Opaque(), nullptr, 0xFFFFFFFF);
+    DeviceContext->OMSetDepthStencilState(m_states->DepthDefault(),0);
+    DeviceContext->RSSetState(m_states->CullNone());
+
+    if (Wireframe)
+    {
+        // Adapt the rasteriser stage to the wireframe rendering mode.
+        
+        DeviceContext->RSSetState(m_states->Wireframe());
+    }
+
+	// Terrain chunk batch rendering is encapsulated in "DisplayChunk."
+
 	m_displayChunk.RenderBatch(m_deviceResources);
+
+    // "Present the contents of the swap chain to the screen."
 
     m_deviceResources->Present();
 }
 
-// Helper method to clear the back buffers.
+
 void Game::Clear()
 {
     m_deviceResources->PIXBeginEvent(L"Clear");
@@ -297,13 +539,19 @@ void Game::Clear()
     context->OMSetRenderTargets(1, &renderTarget, depthStencil);
 
     // Set the viewport.
+
     auto viewport = m_deviceResources->GetScreenViewport();
     context->RSSetViewports(1, &viewport);
 
     m_deviceResources->PIXEndEvent();
 }
 
-void XM_CALLCONV Game::DrawGrid(FXMVECTOR xAxis, FXMVECTOR yAxis, FXMVECTOR origin, size_t xdivs, size_t ydivs, GXMVECTOR color)
+
+void XM_CALLCONV Game::DrawGrid(FXMVECTOR xAxis, FXMVECTOR yAxis
+    , FXMVECTOR origin
+    , size_t xdivs
+    , size_t ydivs
+    , GXMVECTOR color)
 {
     m_deviceResources->PIXBeginEvent(L"Draw grid");
 
@@ -351,8 +599,9 @@ void XM_CALLCONV Game::DrawGrid(FXMVECTOR xAxis, FXMVECTOR yAxis, FXMVECTOR orig
 }
 #pragma endregion
 
+
 #pragma region Message Handlers
-// Message handlers
+
 void Game::OnActivated()
 {
 }
@@ -385,41 +634,50 @@ void Game::OnWindowSizeChanged(int width, int height)
     CreateWindowSizeDependentResources();
 }
 
+
 void Game::BuildDisplayList(std::vector<SceneObject> * SceneGraph)
 {
 	auto device = m_deviceResources->GetD3DDevice();
 	auto devicecontext = m_deviceResources->GetD3DDeviceContext();
 
-	if (!m_displayList.empty())		//is the vector empty
+    //is the vector empty
+	if (!m_displayList.empty())
 	{
-		m_displayList.clear();		//if not, empty it
+        //if not, empty it
+		m_displayList.clear();
 	}
 
 	//for every item in the scenegraph
 	int numObjects = SceneGraph->size();
 	for (int i = 0; i < numObjects; i++)
 	{
-		
 		//create a temp display object that we will populate then append to the display list.
 		DisplayObject newDisplayObject;
+
+        newDisplayObject.m_ID = SceneGraph->at(i).ID;
 		
 		//load model
-		std::wstring modelwstr = StringToWCHART(SceneGraph->at(i).model_path);							//convect string to Wchar
-		newDisplayObject.m_model = Model::CreateFromCMO(device, modelwstr.c_str(), *m_fxFactory, true);	//get DXSDK to load model "False" for LH coordinate system (maya)
+        //convect string to Wchar
+		std::wstring modelwstr = StringToWCHART(SceneGraph->at(i).model_path);
+        //get DXSDK to load model "False" for LH coordinate system (maya)
+		newDisplayObject.m_model = Model::CreateFromCMO(device, modelwstr.c_str()
+            , *m_fxFactory, true);
 
 		//Load Texture
-		std::wstring texturewstr = StringToWCHART(SceneGraph->at(i).tex_diffuse_path);								//convect string to Wchar
+		std::wstring texturewstr = StringToWCHART(SceneGraph->at(i).tex_diffuse_path);
 		HRESULT rs;
-		rs = CreateDDSTextureFromFile(device, texturewstr.c_str(), nullptr, &newDisplayObject.m_texture_diffuse);	//load tex into Shader resource
+		rs = CreateDDSTextureFromFile(device, texturewstr.c_str(), nullptr
+            , &newDisplayObject.m_texture_diffuse);	//load tex into Shader resource
 
 		//if texture fails.  load error default
 		if (rs)
 		{
-			CreateDDSTextureFromFile(device, L"database/data/Error.dds", nullptr, &newDisplayObject.m_texture_diffuse);	//load tex into Shader resource
+			CreateDDSTextureFromFile(device, L"database/data/Error.dds", nullptr
+                , &newDisplayObject.m_texture_diffuse);	//load tex into Shader resource
 		}
 
 		//apply new texture to models effect
-		newDisplayObject.m_model->UpdateEffects([&](IEffect* effect) //This uses a Lambda function,  if you dont understand it: Look it up.
+		newDisplayObject.m_model->UpdateEffects([&](IEffect* effect)
 		{	
 			auto lights = dynamic_cast<BasicEffect*>(effect);
 			if (lights)
@@ -462,10 +720,8 @@ void Game::BuildDisplayList(std::vector<SceneObject> * SceneGraph)
 		m_displayList.push_back(newDisplayObject);
 		
 	}
-		
-		
-		
 }
+
 
 void Game::BuildDisplayChunk(ChunkObject * SceneChunk)
 {
@@ -494,27 +750,32 @@ void Game::NewAudioDevice()
 }
 #endif
 
-
 #pragma endregion
 
+
 #pragma region Direct3D Resources
-// These are the resources that depend on the device.
+
 void Game::CreateDeviceDependentResources()
 {
-    auto context = m_deviceResources->GetD3DDeviceContext();
-    auto device = m_deviceResources->GetD3DDevice();
+    auto DeviceContext = m_deviceResources->GetD3DDeviceContext();
+    auto Device = m_deviceResources->GetD3DDevice();
 
-    m_states = std::make_unique<CommonStates>(device);
+    m_states = std::make_unique<CommonStates>(Device);
 
-    m_fxFactory = std::make_unique<EffectFactory>(device);
-	m_fxFactory->SetDirectory(L"database/data/"); //fx Factory will look in the database directory
-	m_fxFactory->SetSharing(false);	//we must set this to false otherwise it will share effects based on the initial tex loaded (When the model loads) rather than what we will change them to.
+    m_fxFactory = std::make_unique<EffectFactory>(Device);
 
-    m_sprites = std::make_unique<SpriteBatch>(context);
+    //fx Factory will look in the database directory
+	m_fxFactory->SetDirectory(L"database/data/");
 
-    m_batch = std::make_unique<PrimitiveBatch<VertexPositionColor>>(context);
+    //we must set this to false otherwise it will share effects based on the initial tex loaded
+    // (When the model loads) rather than what we will change them to.
+	m_fxFactory->SetSharing(false);
 
-    m_batchEffect = std::make_unique<BasicEffect>(device);
+    m_sprites = std::make_unique<SpriteBatch>(DeviceContext);
+
+    m_batch = std::make_unique<PrimitiveBatch<VertexPositionColor>>(DeviceContext);
+
+    m_batchEffect = std::make_unique<BasicEffect>(Device);
     m_batchEffect->SetVertexColorEnabled(true);
 
     {
@@ -524,33 +785,43 @@ void Game::CreateDeviceDependentResources()
         m_batchEffect->GetVertexShaderBytecode(&shaderByteCode, &byteCodeLength);
 
         DX::ThrowIfFailed(
-            device->CreateInputLayout(VertexPositionColor::InputElements,
+            Device->CreateInputLayout(VertexPositionColor::InputElements,
                 VertexPositionColor::InputElementCount,
                 shaderByteCode, byteCodeLength,
                 m_batchInputLayout.ReleaseAndGetAddressOf())
         );
     }
 
-    m_font = std::make_unique<SpriteFont>(device, L"SegoeUI_18.spritefont");
+    m_font = std::make_unique<SpriteFont>(Device, L"SegoeUI_18.spritefont");
 
-//    m_shape = GeometricPrimitive::CreateTeapot(context, 4.f, 8);
+    //m_shape = GeometricPrimitive::CreateTeapot(context, 4.f, 8);
 
     // SDKMESH has to use clockwise winding with right-handed coordinates, so textures are flipped in U
-    m_model = Model::CreateFromSDKMESH(device, L"tiny.sdkmesh", *m_fxFactory);
+    m_model = Model::CreateFromSDKMESH(Device, L"tiny.sdkmesh", *m_fxFactory);
 	
 
     // Load textures
     DX::ThrowIfFailed(
-        CreateDDSTextureFromFile(device, L"seafloor.dds", nullptr, m_texture1.ReleaseAndGetAddressOf())
+        CreateDDSTextureFromFile(Device, L"seafloor.dds", nullptr, m_texture1.ReleaseAndGetAddressOf())
     );
 
     DX::ThrowIfFailed(
-        CreateDDSTextureFromFile(device, L"windowslogo.dds", nullptr, m_texture2.ReleaseAndGetAddressOf())
+        CreateDDSTextureFromFile(Device, L"windowslogo.dds", nullptr, m_texture2.ReleaseAndGetAddressOf())
     );
 
+
+    if (FrameworkHead)
+    {
+        std::vector<Brush*> Brushes = FrameworkHead->GetBrushes();
+
+        for (auto Tool : Brushes)
+        {
+            Tool->CreateDeviceDependentGeometry(Device, DeviceContext);
+        }
+    }
 }
 
-// Allocate all memory resources that change on a window SizeChanged event.
+
 void Game::CreateWindowSizeDependentResources()
 {
     auto size = m_deviceResources->GetOutputSize();
@@ -576,6 +847,7 @@ void Game::CreateWindowSizeDependentResources()
 	
 }
 
+
 void Game::OnDeviceLost()
 {
     m_states.reset();
@@ -586,22 +858,33 @@ void Game::OnDeviceLost()
     m_font.reset();
     m_shape.reset();
     m_model.reset();
+
+    if (FrameworkHead)
+    {
+        std::vector<Brush*> Brushes = FrameworkHead->GetBrushes();
+
+        for (auto Tool : Brushes)
+        {
+            Tool->ResetGeometry();
+        }
+    }
+
     m_texture1.Reset();
     m_texture2.Reset();
     m_batchInputLayout.Reset();
 }
 
+
 void Game::OnDeviceRestored()
 {
     CreateDeviceDependentResources();
-
     CreateWindowSizeDependentResources();
 }
 #pragma endregion
 
+
 std::wstring StringToWCHART(std::string s)
 {
-
 	int len;
 	int slength = (int)s.length() + 1;
 	len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
@@ -611,3 +894,5 @@ std::wstring StringToWCHART(std::string s)
 	delete[] buf;
 	return r;
 }
+
+

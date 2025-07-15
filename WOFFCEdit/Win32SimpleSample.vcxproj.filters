@@ -17,6 +17,9 @@
     <Filter Include="SQLITE">
       <UniqueIdentifier>{a006b0b6-46b2-4c4f-808a-ec8fe3e790eb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Delegates">
+      <UniqueIdentifier>{aaeaeaea-7d64-41a5-a4a1-d336755da090}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -59,6 +62,17 @@
     <ClCompile Include="SelectDialogue.cpp">
       <Filter>MFC</Filter>
     </ClCompile>
+    <ClCompile Include="InputCommands.cpp">
+      <Filter>Tool</Filter>
+    </ClCompile>
+    <ClCompile Include="CameraController.cpp">
+      <Filter>Tool</Filter>
+    </ClCompile>
+    <ClCompile Include="Brush.cpp" />
+    <ClCompile Include="ConcurrencyHelper.cpp" />
+    <ClCompile Include="VoxelTraversal.cpp" />
+    <ClCompile Include="ExtrusionBrush.cpp" />
+    <ClCompile Include="ContinuationBrush.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DeviceResources.h">
@@ -108,6 +122,38 @@
     <ClInclude Include="SelectDialogue.h">
       <Filter>MFC</Filter>
     </ClInclude>
+    <ClInclude Include="allocator.hpp">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="bindtmpl.hpp">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="config.hpp">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="delegate.h">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="delegatetmpl.h">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="delegatetmpl.hpp">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="get_pointer.hpp">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="make_delegatetmpl.hpp">
+      <Filter>Delegates</Filter>
+    </ClInclude>
+    <ClInclude Include="CameraController.h">
+      <Filter>Tool</Filter>
+    </ClInclude>
+    <ClInclude Include="Brush.h" />
+    <ClInclude Include="ConcurrencyHelper.h" />
+    <ClInclude Include="VoxelTraversal.h" />
+    <ClInclude Include="ExtrusionBrush.h" />
+    <ClInclude Include="ContinuationBrush.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

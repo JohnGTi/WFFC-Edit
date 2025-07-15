@@ -12,7 +12,11 @@ DisplayChunk::DisplayChunk()
 	m_terrainSize = 512;
 	m_terrainHeightScale = 0.25;  //convert our 0-256 terrain to 64
 	m_textureCoordStep = 1.0 / (TERRAINRESOLUTION-1);	//-1 becuase its split into chunks. not vertices.  we want tthe last one in each row to have tex coord 1
-	m_terrainPositionScalingFactor = m_terrainSize / (TERRAINRESOLUTION-1);
+	m_terrainPositionScalingFactor = static_cast<float>(m_terrainSize) / (TERRAINRESOLUTION-1);
+
+	// Calculate the maximum height of the terrain geometry.
+
+	TerrainHeightMaximum = static_cast<float>(RAW_DEPTH) * m_terrainHeightScale;
 }
 
 
@@ -50,13 +54,14 @@ void DisplayChunk::RenderBatch(std::shared_ptr<DX::DeviceResources>  DevResource
 	context->IASetInputLayout(m_terrainInputLayout.Get());
 
 	m_batch->Begin();
-	for (size_t i = 0; i < TERRAINRESOLUTION-1; i++)	//looping through QUADS.  so we subtrack one from the terrain array or it will try to draw a quad starting with the last vertex in each row. Which wont work
+	for (size_t i = 0; i < TERRAINRESOLUTION - 1; i++)	//looping through QUADS.  so we subtrack one from the terrain array or it will try to draw a quad starting with the last vertex in each row. Which wont work
 	{
-		for (size_t j = 0; j < TERRAINRESOLUTION-1; j++)//same as above
+		for (size_t j = 0; j < TERRAINRESOLUTION - 1; j++)//same as above
 		{
-			m_batch->DrawQuad(m_terrainGeometry[i][j], m_terrainGeometry[i][j+1], m_terrainGeometry[i+1][j+1], m_terrainGeometry[i+1][j]); //bottom left bottom right, top right top left.
+			m_batch->DrawQuad(m_terrainGeometry[i][j], m_terrainGeometry[i][j + 1], m_terrainGeometry[i + 1][j + 1], m_terrainGeometry[i + 1][j]); //bottom left bottom right, top right top left.
 		}
 	}
+
 	m_batch->End();
 }
 
@@ -71,7 +76,7 @@ void DisplayChunk::InitialiseBatch()
 		for (size_t j = 0; j < TERRAINRESOLUTION; j++)
 		{
 			index = (TERRAINRESOLUTION * i) + j;
-			m_terrainGeometry[i][j].position =			Vector3(j*m_terrainPositionScalingFactor-(0.5*m_terrainSize), (float)(m_heightMap[index])*m_terrainHeightScale, i*m_terrainPositionScalingFactor-(0.5*m_terrainSize));	//This will create a terrain going from -64->64.  rather than 0->128.  So the center of the terrain is on the origin
+			m_terrainGeometry[i][j].position =			Vector3(j*m_terrainPositionScalingFactor-(0.5f*m_terrainSize), (float)(m_heightMap[index])*m_terrainHeightScale, i*m_terrainPositionScalingFactor-(0.5f*m_terrainSize));	//This will create a terrain going from -64->64.  rather than 0->128.  So the center of the terrain is on the origin
 			m_terrainGeometry[i][j].normal =			Vector3(0.0f, 1.0f, 0.0f);						//standard y =up
 			m_terrainGeometry[i][j].textureCoordinate =	Vector2(((float)m_textureCoordStep*j)*m_tex_diffuse_tiling, ((float)m_textureCoordStep*i)*m_tex_diffuse_tiling);				//Spread tex coords so that its distributed evenly across the terrain from 0-1
 			
@@ -139,6 +144,114 @@ void DisplayChunk::LoadHeightMap(std::shared_ptr<DX::DeviceResources>  DevResour
 	
 }
 
+
+XMFLOAT3 DisplayChunk::GetTerrainVertex(const size_t i, const size_t j) const
+{
+	// Validate that the index arguments are within the range of the array
+	// of vertices, and return accordingly.
+
+	if (0 <= i && i <= (TERRAINRESOLUTION - 1)
+		&& 0 <= j && j <= (TERRAINRESOLUTION - 1))
+	{
+		return m_terrainGeometry[i][j].position;
+	}
+
+	return XMFLOAT3(0.f, 0.f, 0.f);
+}
+
+
+XMVECTOR DisplayChunk::GetEdgeMidpoint(XMVECTOR Vertex0, XMVECTOR Vertex1)
+{
+	// Should the DisplayChunk dictate the interpolation method between terrain vertices,
+	// this method proves functionally cohesive.
+
+	return XMVectorLerpV(Vertex0, Vertex1, XMVectorReplicate(0.5f));
+}
+
+
+DirectX::SimpleMath::Vector3 DisplayChunk::CalculateNormalByVertex(const size_t i, const size_t j) const
+{
+	/** Per augmented vertex, calculate the surface normals. */
+
+	DirectX::SimpleMath::Vector3 UpDownVector;
+	DirectX::SimpleMath::Vector3 LeftRightVector;
+	DirectX::SimpleMath::Vector3 NormalVector;
+
+	UpDownVector.x = (m_terrainGeometry[i + 1][j].position.x - m_terrainGeometry[i - 1][j].position.x);
+	UpDownVector.y = (m_terrainGeometry[i + 1][j].position.y - m_terrainGeometry[i - 1][j].position.y);
+	UpDownVector.z = (m_terrainGeometry[i + 1][j].position.z - m_terrainGeometry[i - 1][j].position.z);
+
+	LeftRightVector.x = (m_terrainGeometry[i][j - 1].position.x - m_terrainGeometry[i][j + 1].position.x);
+	LeftRightVector.y = (m_terrainGeometry[i][j - 1].position.y - m_terrainGeometry[i][j + 1].position.y);
+	LeftRightVector.z = (m_terrainGeometry[i][j - 1].position.z - m_terrainGeometry[i][j + 1].position.z);
+
+	LeftRightVector.Cross(UpDownVector, NormalVector);
+
+	NormalVector.Normalize();
+
+	// Return the normal vector, for assignment, for example.
+
+	return NormalVector;
+}
+
+void DisplayChunk::SetTerrainHeightByVertex(const size_t i, const size_t j, float Height)
+{
+	// Is the raw representation of the proposed height within
+	// the depth that the height map can represent?
+
+	unsigned int RawHeight = Height / m_terrainHeightScale;
+
+	if (0 <= i && i <= (TERRAINRESOLUTION - 1)
+		&& 0 <= j && j <= (TERRAINRESOLUTION - 1)
+
+		&& 0 <= RawHeight && RawHeight <= RAW_DEPTH)
+	{
+		// Update the terrain geometry, and index the discrepancy
+		// in the geometry over the working height map.
+
+		m_terrainGeometry[i][j].position.y = Height;
+
+		DeltaTerrain.push_back(std::make_pair(i, j));
+
+		// Calculate and assign the vertex normal.
+		
+		m_terrainGeometry[i][j].normal = CalculateNormalByVertex(i, j);
+	}
+}
+
+
+void DisplayChunk::UpdateHeightMap()
+{
+	size_t HeightMapIndex = 0;
+
+	for (const auto& Index : DeltaTerrain)
+	{
+		size_t i = Index.first;
+		size_t j = Index.second;
+
+		// Validate the geometry index against the terrain bounds.
+
+		if (0 <= i && i <= (TERRAINRESOLUTION - 1)
+			&& 0 <= j && j <= (TERRAINRESOLUTION - 1))
+		{
+			// For the corresponding BYTE in "m_heightMap,"
+			// update according to the manipulated geometry.
+
+			HeightMapIndex = (TERRAINRESOLUTION * i) + j;
+
+			// Note that some consideration might be owed to the terrain manipulation pipeline,
+			// such that a geometry height may not be truncated and potentially misrepresented.
+
+			m_heightMap[HeightMapIndex] = static_cast<BYTE>(m_terrainGeometry[i][j].position.y / m_terrainHeightScale);
+		}
+	}
+
+	// Having resolved all changes, clear the collection.
+
+	DeltaTerrain.clear();
+}
+
+
 void DisplayChunk::SaveHeightMap()
 {
 /*	for (size_t i = 0; i < TERRAINRESOLUTION*TERRAINRESOLUTION; i++)
@@ -172,7 +285,7 @@ void DisplayChunk::UpdateTerrain()
 		for (size_t j = 0; j < TERRAINRESOLUTION; j++)
 		{
 			index = (TERRAINRESOLUTION * i) + j;
-			m_terrainGeometry[i][j].position.y = (float)(m_heightMap[index])*m_terrainHeightScale;	
+			m_terrainGeometry[i][j].position.y = (float)(m_heightMap[index])*m_terrainHeightScale;
 		}
 	}
 	CalculateTerrainNormals();

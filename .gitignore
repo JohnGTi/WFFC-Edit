@@ -1,3 +1,11 @@
-WOFFCEdit/.vs/Win32SimpleSample/v15/Browse.VC.db
-WOFFCEdit/.vs/Win32SimpleSample/v15/ipch/AutoPCH/WIN32SIMPLESAMPLE-b61102aa/TOOLMAIN-9ab8bee5/TOOLMAIN.ipch
-WOFFCEdit/.vs/Win32SimpleSample/v15/Browse.VC.opendb
+# Ignore all .ipch files and folders.
+*.ipch
+.ipch/
+**/*.ipch/
+
+# Ignore Visual Studio database and browsing files.
+*.VC.db
+*.VC.opendb
+
+# Ignore the .vs folder, entirely.
+.vs/

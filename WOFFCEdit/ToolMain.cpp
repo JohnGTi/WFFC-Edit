@@ -1,63 +1,136 @@
 #include "ToolMain.h"
 #include "resource.h"
+
+#include "CameraController.h"
+#include "Brush.h"
+
+#include <atlstr.h>
 #include <vector>
 #include <sstream>
 
-//
-//ToolMain Class
+#include "ConcurrencyHelper.h"
+//#include <ppl.h>
+//#include <agents.h>
+
+using namespace concurrency;
+
+
+// Hexidecimal value for the "SHIFT" virtual-key.
+
+#define SHIFT_DOWN 0x10
+
+
 ToolMain::ToolMain()
+	:
+	m_d3dRenderer(this)
+	, m_toolInputCommands(&m_d3dRenderer)
+	, m_keyArray{}
 {
-
-	m_currentChunk = 0;		//default value
-	m_selectedObject = 0;	//initial selection ID
-	m_sceneGraph.clear();	//clear the vector for the scenegraph
-	m_databaseConnection = NULL;
-
-	//zero input commands
-	m_toolInputCommands.forward		= false;
-	m_toolInputCommands.back		= false;
-	m_toolInputCommands.left		= false;
-	m_toolInputCommands.right		= false;
+	// Access the virtual camera by way of the renderer:
+	// the camera is bound to a fast delegate.
 	
-}
+	// (This delegate broadcasts a change in the m_toolInputCommands structure,
+	// and avoids "Content Coupling" with the camera class).
 
+	if (Camera = m_d3dRenderer.GetCamera())
+	{
+		OnChangeInInput.bind(&CameraController::OnChangeInInput, Camera.get());
+	}
+
+	// Default the active Brush to reference the extrusion Brush tool.
+
+	ActiveBrush = &ExtrusionTypeBrush;
+
+
+	// Clear the container of all objects in the current chunk.
+
+	m_sceneGraph.clear();
+}
 
 ToolMain::~ToolMain()
 {
-	sqlite3_close(m_databaseConnection);		//close the database connection
+	// Close the database connection.
+
+	sqlite3_close(m_databaseConnection);
+}
+
+
+std::vector<Brush*> ToolMain::GetBrushes()
+{
+	// Return a vector of pointers to each Brush.
+
+	return std::vector<Brush*>{ &ContinuationTypeBrush, &ExtrusionTypeBrush };
 }
 
 
 int ToolMain::getCurrentSelectionID()
 {
-
 	return m_selectedObject;
+}
+
+
+void ToolMain::ReportSQLiteError(sqlite3* DatabaseConnection)
+{
+	// TODO: A more complex (Still "Modal") dialogue may better inform the end user
+	
+	//		 (A message may, for example, require the user to exit or continue the application;
+	//		 another might force the application closed upon user confirmation).
+
+
+	// Retrieve textual description of an SQLite error
+	// and purpose a CString utility (The structure of which is accepted by "AfxMessageBox").
+
+	const char* ErrorMessage = sqlite3_errmsg(DatabaseConnection);
+	CString UnicodeErrorMessage(ErrorMessage);
+
+	// AfxMessageBox automates a dialogue child of the main window.
+
+	AfxMessageBox(UnicodeErrorMessage, MB_ICONERROR);
 }
 
 void ToolMain::onActionInitialise(HWND handle, int width, int height)
 {
-	//window size, handle etc for directX
+	// Store the width and height of game window in class member variables.
+
+	WindowHandle = handle;
+
 	m_width		= width;
 	m_height	= height;
+
+	// Initialise the renderer device resources and peripheral interfaces
+	// (The Keyboard and Mouse, for example).
 	
-	m_d3dRenderer.Initialize(handle, m_width, m_height);
+	m_d3dRenderer.Initialize(WindowHandle, m_width, m_height);
 
-	//database connection establish
-	int rc;
-	rc = sqlite3_open_v2("database/test.db",&m_databaseConnection, SQLITE_OPEN_READWRITE, NULL);
 
-	if (rc) 
+	// Establish a connection to the SQLite database,
+	// and validate a successful connection.
+
+	int ResultCode = sqlite3_open_v2("database/test.db"
+		, &m_databaseConnection, SQLITE_OPEN_READWRITE, NULL);
+
+	if (ResultCode != SQLITE_OK)
 	{
-		TRACE("Can't open database");
-		//if the database cant open. Perhaps a more catastrophic error would be better here
+		// The operation was unsuccessful; the return code is indicative of some error.
+
+		if (ResultCode == SQLITE_READONLY)
+		{
+			// TODO: Here, there is room to validate whether read-only access is suitable,
+			//		 should that it satisfy the requirements of the module.
+		}
+		else if (ResultCode == SQLITE_NOTFOUND || ResultCode == SQLITE_CANTOPEN)
+		{
+			ReportSQLiteError(m_databaseConnection);
+		}
 	}
 	else 
 	{
-		TRACE("Opened database successfully");
+		TRACE("Database opened successfully.");
 	}
 
 	onActionLoad();
 }
+
 
 void ToolMain::onActionLoad()
 {
@@ -183,6 +256,7 @@ void ToolMain::onActionLoad()
 
 }
 
+
 void ToolMain::onActionSave()
 {
 	//SQL
@@ -272,82 +346,487 @@ void ToolMain::onActionSave()
 	MessageBox(NULL, L"Objects Saved", L"Notification", MB_OK);
 }
 
+
 void ToolMain::onActionSaveTerrain()
 {
 	m_d3dRenderer.SaveDisplayChunk(&m_chunk);
 }
 
-void ToolMain::Tick(MSG *msg)
-{
-	//do we have a selection
-	//do we have a mode
-	//are we clicking / dragging /releasing
-	//has something changed
-		//update Scenegraph
-		//add to scenegraph
-		//resend scenegraph to Direct X renderer
 
-	//Renderer Update Call
-	m_d3dRenderer.Tick(&m_toolInputCommands);
+Brush* ToolMain::GetBrushIfActive()
+{
+	if (ActiveToolMode == ToolMode::Painting && ActiveBrush)
+	{
+		return ActiveBrush;
+	}
+	return nullptr;
 }
 
-void ToolMain::UpdateInput(MSG * msg)
-{
 
+void ToolMain::Tick(MSG *msg)
+{
+	/** The following is required for debugging/demonstration;
+	its usefulness should be better realised by Toolbar functionality. */
+
+	switch (ActiveToolMode)
+	{
+	case ToolMode::Picking:
+
+		m_d3dRenderer.var = L"Picking";
+		break;
+	case ToolMode::Painting:
+
+		// Again, this statement and required access are
+		// a shortcut for adequate demonstration.
+
+		if (dynamic_cast<ExtrusionBrush*>(ActiveBrush))
+		{
+			m_d3dRenderer.var = L"Extrusion rate: " + std::to_wstring(ExtrusionTypeBrush.Climb);
+		}
+		else
+		{
+			std::wstring Flatten = ContinuationTypeBrush.Flatten ? L"Flatten" : L"Don't flatten";
+			m_d3dRenderer.var = L"Continuation: " + Flatten;
+		}
+		break;
+	}
+
+	/**  */
+	
+	if (ActiveToolMode == ToolMode::Painting && ActiveBrush
+		&& m_toolInputCommands.LeftMouseIsDown())
+	{
+		// A primary mouse button press, during "Painting,"
+		// performs the primary Brush action.
+
+		ActiveBrush->Stroke(&m_d3dRenderer);
+	}
+
+	// Tick the renderer (Interface).
+
+	m_d3dRenderer.Tick();
+}
+
+
+void ToolMain::SelectObjectByPick(bool SelectMultiple)
+{
+	// Control multiple object selection;
+	// "Pick" casts to the screen for a selectable object.
+
+	
+	if (DisplayObject* ObjectPick = m_d3dRenderer.Pick())
+	{
+		if (SelectedObjects.find(ObjectPick) == SelectedObjects.end())
+		{
+			// "ObjectPick" is not currently selected.
+
+			if (!SelectMultiple && !SelectedObjects.empty())
+			{
+				// Where multiple objects are currently selected and
+				// additional selection is not enabled, the previous selection is discarded.
+
+				SelectedObjects.clear();
+			}
+
+			SelectedObjects.insert(ObjectPick);
+		}
+		else
+		{
+			if (!SelectMultiple && SelectedObjects.size() > 1)
+			{
+				// Where multiple objects are currently selected and additional selection is
+				// not enabled, the "Pick" is honoured and the previous selection, discarded.
+
+				SelectedObjects.clear();
+				SelectedObjects.insert(ObjectPick);
+			}
+			else
+			{
+				SelectedObjects.erase(ObjectPick);
+			}
+		}
+	}
+	else
+	{
+		// In the case of the "Picking" of any negative space,
+		// de-select all.
+
+		SelectedObjects.clear();
+	}
+}
+
+void ToolMain::FlipBrush()
+{
+	// TODO: "Flip" functionality is temporary: major tool selection is -
+	// eventually - to be done by toolbar button.
+
+	if (dynamic_cast<ExtrusionBrush*>(ActiveBrush))
+	{
+		ActiveBrush = &ContinuationTypeBrush;
+
+		ActiveBrush->OnActive(ExtrusionTypeBrush, this);
+	}
+	else
+	{
+		ActiveBrush = &ExtrusionTypeBrush;
+
+		ActiveBrush->OnActive(ContinuationTypeBrush, this);
+	}
+}
+
+void ToolMain::UpdateInput(MSG* msg)
+{
+	/**
+		* TODO: The broadcasting of an input update is flawed and the "ChangeInInput" optimisation, redundant:
+		* WM_MOUSEMOVE messages signal where there is zero cursor movement, during a mouse button press
+		
+		* (i.e., redundant updates of the input class negate any optimisation off-the-back of "ChangeInInput" validation).
+	*/
+
+	// A change in m_toolInputCommands is to be broadcast.
+
+	bool ChangeInInputState = false;
+
+	
 	switch (msg->message)
 	{
-		//Global inputs,  mouse position and keys etc
 	case WM_KEYDOWN:
+
 		m_keyArray[msg->wParam] = true;
 		break;
 
 	case WM_KEYUP:
+
 		m_keyArray[msg->wParam] = false;
 		break;
 
 	case WM_MOUSEMOVE:
-		break;
 
-	case WM_LBUTTONDOWN:	//mouse button down,  you will probably need to check when its up too
-		//set some flag for the mouse button in inputcommands
-		break;
+		m_toolInputCommands.SetCursorPosition({}, XMFLOAT2(GET_X_LPARAM(msg->lParam)
+			, GET_Y_LPARAM(msg->lParam)));
 
+		ChangeInInputState = true;
+
+		if (ActiveToolMode == ToolMode::Painting && ActiveBrush)
+		{
+			// A Brush indicator corresponds to the cursor position.
+
+			ActiveBrush->UpdateIndicator(WindowHandle, m_toolInputCommands
+				, &m_d3dRenderer);
+		}
+		break;
+	
+	case WM_LBUTTONDOWN:
+	{
+		bool IsShortPress = false;
+
+		m_toolInputCommands.SetLeftMouseDown({}, true
+			, ShortPressWindow, &IsShortPress);
+
+		if (ActiveToolMode == ToolMode::Painting && ActiveBrush)
+		{
+			// Resolve a primary mouse button down.
+
+			ActiveBrush->OnPrimary();
+		}
+
+		ChangeInInputState = true;
 	}
-	//here we update all the actual app functionality that we want.  This information will either be used int toolmain, or sent down to the renderer (Camera movement etc
-	//WASD movement
+		break;
+
+	case WM_LBUTTONUP:
+
+		m_toolInputCommands.SetLeftMouseDown({}, false);
+
+		ChangeInInputState = true;
+
+		switch (ActiveToolMode)
+		{
+		case ToolMode::Painting:
+
+			if (ActiveBrush)
+			{
+				ActiveBrush->Release(m_toolInputCommands
+					, &m_d3dRenderer);
+			}
+			
+			break;
+
+		case ToolMode::Picking:
+
+			SelectObjectByPick(PickMultiple);
+			break;
+
+		default:
+			break;
+		}
+		break;
+
+	case WM_RBUTTONDOWN:
+	{
+		m_toolInputCommands.SetRightMouseDown({}, true);
+
+		ChangeInInputState = true;
+
+		// The use of any tool is precluded during camera-control, as of a secondary
+		// mouse press longer than that of a short press ("ShortPressWindow").
+
+		ConcurrencyHelper::PostDelayFunction DeactivateTool = [&InactiveTool = InactiveTool
+			, &ActiveToolMode = ActiveToolMode]()
+			{
+				InactiveTool = ActiveToolMode;
+				ActiveToolMode = ToolMode::Inactive;
+			};
+
+		// 
+
+		unsigned int Delay = static_cast<int>(std::round(ShortPressWindow * 1000));
+
+		DeactivationTokenSource = std::make_shared<cancellation_token_source>();
+
+		DeactivationTask = ConcurrencyHelper::CompleteAfterDelay(DeactivationTokenSource->get_token()
+			, Delay
+			, DeactivateTool);
+	}
+		break;
+
+	case WM_RBUTTONUP:
+	{
+		bool IsShortPress = false;
+
+		// Update the corresponding input command, and receive whether or not
+		// ("IsShortPress") the press was completed within a designer-value duration.
+
+		m_toolInputCommands.SetRightMouseDown({}, false, ShortPressWindow, &IsShortPress);
+
+		ChangeInInputState = true;
+
+		
+		if (DeactivationTokenSource)
+		{
+			cancellation_token DeactivationToken = DeactivationTokenSource->get_token();
+
+			if(!DeactivationToken.is_canceled())
+			{
+				// Cancel the delayed (By "ShortPressWindow" seconds) deactivation
+				// of the current tool mode, which has been scheduled to preclude
+				// the use of the current tool *during a secondary mouse button hold*.
+
+				DeactivationTokenSource->cancel();
+				DeactivationTask.wait();
+			}
+		}
+
+		// The release of the secondary mouse press always restores the active tool.
+
+		ActiveToolMode = InactiveTool;
+
+		if (ActiveToolMode == ToolMode::Painting && ActiveBrush
+			&& IsShortPress)
+		{
+			// A short press of the secondary mouse button envokes
+			// some supplemental action during "Painting."
+
+			ActiveBrush->OnSecondary();
+		}
+	}
+		break;
+
+	case WM_MOUSEWHEEL:
+
+		m_toolInputCommands.SetScrollAxis({}, GET_WHEEL_DELTA_WPARAM(msg->wParam));
+
+		ChangeInInputState = true;
+
+		// (An input system may have been preferred in which any module response
+		// is envoked by the "OnChangeInInput" delegate).
+
+		if (Camera && Camera->CameraIsFree())
+		{
+			Camera->OnScrollInput(&m_toolInputCommands);
+		}
+		else if (ActiveToolMode == ToolMode::Painting && ActiveBrush)
+		{
+			ActiveBrush->OnScrollInput(m_toolInputCommands, ScrollSecondary);
+		}
+
+		// Default, having resolved scroll wheel input.
+
+		m_toolInputCommands.DefaultScrollAxis({});
+
+		break;
+
+	case WM_MOUSEHOVER:
+
+		break;
+	}
+
+	
+	// "SHIFT_DOWN" indicates the selection of multiple scene objects.
+
+	PickMultiple = m_keyArray[SHIFT_DOWN];
+
+	// The "C" key functions as an input modifier for the "WM_MOUSEWHEEL."
+
+	ScrollSecondary = m_keyArray['C'];
+
+
+	// "WASD" input describes movement in two axes (The XZ-plane;
+	// the forward - "WS" - and lateral - "AD" - axes).
+
 	if (m_keyArray['W'])
 	{
-		m_toolInputCommands.forward = true;
+		m_toolInputCommands.SetForwardAxis({}, 1.f);
+
+		ChangeInInputState = true;
 	}
-	else m_toolInputCommands.forward = false;
-	
-	if (m_keyArray['S'])
+	else if (m_keyArray['S'])
 	{
-		m_toolInputCommands.back = true;
+		m_toolInputCommands.SetForwardAxis({}, -1.f);
+
+		ChangeInInputState = true;
 	}
-	else m_toolInputCommands.back = false;
-	if (m_keyArray['A'])
+	else
 	{
-		m_toolInputCommands.left = true;
+		m_toolInputCommands.SetForwardAxis({}, 0.f);
 	}
-	else m_toolInputCommands.left = false;
+
+	// (And for lateral, "AD," movement...).
 
 	if (m_keyArray['D'])
 	{
-		m_toolInputCommands.right = true;
+		m_toolInputCommands.SetLateralAxis({}, 1.f);
+
+		ChangeInInputState = true;
 	}
-	else m_toolInputCommands.right = false;
-	//rotation
-	if (m_keyArray['E'])
+	else if (m_keyArray['A'])
 	{
-		m_toolInputCommands.rotRight = true;
+		m_toolInputCommands.SetLateralAxis({}, -1.f);
+
+		ChangeInInputState = true;
 	}
-	else m_toolInputCommands.rotRight = false;
+	else
+	{
+		m_toolInputCommands.SetLateralAxis({}, 0.f);
+	}
+
+	// "Q" and "E" key input are set to describe movement along the "Up" axis.
+
 	if (m_keyArray['Q'])
 	{
-		m_toolInputCommands.rotLeft = true;
-	}
-	else m_toolInputCommands.rotLeft = false;
+		// "Q" describes movement along the vertical axis in the negative direction.
 
-	//WASD
+		m_toolInputCommands.SetVerticalAxis({}, -1.f);
+
+		ChangeInInputState = true;
+	}
+	else if (m_keyArray['E'])
+	{
+		m_toolInputCommands.SetVerticalAxis({}, 1.f);
+
+		ChangeInInputState = true;
+	}
+	else
+	{
+		m_toolInputCommands.SetVerticalAxis({}, 0.f);
+	}
+
+
+	// The active tool can be assigned by key control.
+
+	if (m_keyArray['V'])
+	{
+		// Select the "Picking" tool, and reset "V" key control.
+
+		ActiveToolMode = ToolMode::Picking;
+
+		m_keyArray['V'] = false;
+
+		// Validate, firstly, that the camera mode
+		// does not warrant a hidden cursor.
+
+		if (Camera && !Camera->CameraIsFree())
+		{
+			// A "true" setting increments "winuser.h"'s internal display counter
+			// (Microsoft Learn, 2024); during "Picking," the mouse cursor is visible.
+
+			while (ShowCursor(true) < 0);
+		}
+	}
+	if (m_keyArray['R'])
+	{
+		// Toggle the "Painting" tool.
+
+		if (ActiveToolMode == ToolMode::Picking)
+		{
+			ActiveToolMode = ToolMode::Painting;
+
+			// At the transition from the picking tool,
+			// clear all selected objects.
+
+			SelectedObjects.clear();
+		}
+		else
+		{
+			ActiveToolMode = ToolMode::Picking;
+
+			if (Camera && !Camera->CameraIsFree())
+			{
+				while (ShowCursor(true) < 0);
+			}
+		}
+
+		// Reset "R" key control.
+
+		m_keyArray['R'] = false;
+	}
+	if (m_keyArray['T'])
+	{
+		// On "T," the current Brush is to toggled,
+		// (Between the Extrusion and Continuation brushes).
+
+		if (ActiveToolMode != ToolMode::Painting)
+		{
+			// On toggle, the Brush is the active tool.
+
+			ActiveToolMode = ToolMode::Painting;
+
+			SelectedObjects.clear();
+		}
+
+		FlipBrush();
+
+		// Reset "T" key control.
+
+		m_keyArray['T'] = false;
+	}
+
+
+	if (m_keyArray['F'])
+	{
+		m_d3dRenderer.ToggleWireframe();
+
+		// Reset "F" key control.
+
+		m_keyArray['F'] = false;
+	}
+
+
+	if (ChangeInInputState)
+	{
+		// Broadcast the change in the input state (The camera controller, for example,
+		// may skip some expensive calculations where there is no change).
+
+		OnChangeInInput(0);
+	}
 }
+
+
+/*
+	* Microsoft Learn
+	* (2024)
+	* ShowCursor function (winuser.h) - Win32 apps.
+	* Available at: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showcursor
+	* (Accessed: 26 February 2024).
+*/
+

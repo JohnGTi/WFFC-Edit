@@ -3,8 +3,14 @@
 #include "DeviceResources.h"
 #include "ChunkObject.h"
 
+#include <array>
+
+
 //geometric resoltuion - note,  hard coded.
 #define TERRAINRESOLUTION 128
+
+/** The following might be better read from the height map or original chunk data.  */
+constexpr unsigned int RAW_DEPTH = 256;
 
 class DisplayChunk
 {
@@ -15,6 +21,52 @@ public:
 	void RenderBatch(std::shared_ptr<DX::DeviceResources>  DevResources);
 	void InitialiseBatch();	//initial setup, base coordinates etc based on scale
 	void LoadHeightMap(std::shared_ptr<DX::DeviceResources>  DevResources);
+
+	/**
+		* The uniform cell dimensions are of the terrain scaling factor.
+	*/
+	float GetCellWidth() const
+	{
+		return m_terrainPositionScalingFactor;
+	}
+
+	/** Get the maximum height of the terrain geometry. */
+	float GetMaximumHeight() const
+	{
+		return TerrainHeightMaximum;
+	}
+
+	/**
+		* Should "i" and "j" be within the resolution bounds,
+		* return the indexed position.
+	*/
+	DirectX::XMFLOAT3 GetTerrainVertex(const size_t i
+		, const size_t j) const;
+
+	/**
+		* According to the interpolation between vertices,
+		* return the mid-point between a pair of vertices.
+	*/
+	static DirectX::XMVECTOR GetEdgeMidpoint(DirectX::XMVECTOR Vertex0
+		, DirectX::XMVECTOR Vertex1);
+
+
+private:
+	/**  */
+	DirectX::SimpleMath::Vector3 CalculateNormalByVertex(const size_t i
+		, const size_t j) const;
+
+
+public:
+	/**
+		* Update a geometric height, and the corresponding normal values.
+	*/
+	void SetTerrainHeightByVertex(const size_t i, const size_t j
+		, float Height);
+
+	/**  */
+	void UpdateHeightMap();
+
 	void SaveHeightMap();			//saves the heigtmap back to file.
 	void UpdateTerrain();			//updates the geometry based on the heigtmap
 	void GenerateHeightmap();		//creates or alters the heightmap
@@ -26,14 +78,23 @@ public:
 
 private:
 	
-	DirectX::VertexPositionNormalTexture m_terrainGeometry[TERRAINRESOLUTION][TERRAINRESOLUTION];
+	public:DirectX::VertexPositionNormalTexture m_terrainGeometry[TERRAINRESOLUTION][TERRAINRESOLUTION];private:
 	BYTE m_heightMap[TERRAINRESOLUTION*TERRAINRESOLUTION];
 	void CalculateTerrainNormals();
+
+	/**
+		* Index the terrain geometry that does not reflect the values of the height map.
+	*/
+	std::vector<std::pair<size_t, size_t>> DeltaTerrain;
 
 	float	m_terrainHeightScale;
 	int		m_terrainSize;				//size of terrain in metres
 	float	m_textureCoordStep;			//step in texture coordinates between each vertex row / column
 	float   m_terrainPositionScalingFactor;	//factor we multiply the position by to convert it from its native resolution( 0- Terrain Resolution) to full scale size in metres dictated by m_Terrainsize
+
+	// Calculate the maximum height of the terrain geometry.
+
+	float TerrainHeightMaximum = 0.f;
 	
 	std::string m_name;
 	int m_chunk_x_size_metres;
